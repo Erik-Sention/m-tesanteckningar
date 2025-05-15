@@ -1,6 +1,6 @@
 import React from 'react';
 import { TranscriptionMethod } from '../app/page';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { summarizeWithGemini, summarizeWithOpenAI } from '../utils/transcription';
 import SummaryDisplay from './SummaryDisplay';
 import { exportSummaryToWord } from '../utils/exportWord';
@@ -23,6 +23,19 @@ export default function TranscriptionDisplay({
   const [showSummary, setShowSummary] = useState(false);
   const [summary, setSummary] = useState<string | null>(null);
   const [isLoadingSummary, setIsLoadingSummary] = useState(false);
+  const [showPromptInput, setShowPromptInput] = useState(false);
+  const [customPrompt, setCustomPrompt] = useState<string>('');
+
+  // Ladda prompt från localStorage vid mount
+  useEffect(() => {
+    const savedPrompt = localStorage.getItem('custom-summary-prompt');
+    if (savedPrompt) setCustomPrompt(savedPrompt);
+  }, []);
+
+  // Spara prompt till localStorage när den ändras
+  useEffect(() => {
+    if (customPrompt) localStorage.setItem('custom-summary-prompt', customPrompt);
+  }, [customPrompt]);
 
   // Kontrollera att OpenAI-nyckeln finns (ej tom)
   const isValidOpenAIKey = openAIApiKey && openAIApiKey.trim().length > 0;
@@ -44,10 +57,15 @@ export default function TranscriptionDisplay({
       if (useOpenAI) {
         summaryText = await summarizeWithOpenAI(transcript, openAIApiKey);
       } else {
-        summaryText = await summarizeWithGemini(transcript, geminiApiKey);
+        summaryText = await summarizeWithGemini(
+          transcript,
+          geminiApiKey,
+          customPrompt && customPrompt.trim().length > 0 ? customPrompt : undefined
+        );
       }
       setSummary(summaryText);
       setShowSummary(true);
+      setShowPromptInput(false);
     } catch (error) {
       console.error('Fel vid sammanfattning:', error);
       const apiName = useOpenAI ? 'OpenAI' : 'Gemini';
@@ -135,18 +153,48 @@ export default function TranscriptionDisplay({
         </a>
         {(geminiApiKey || openAIApiKey) && (
           <button
-            onClick={handleSummarize}
+            onClick={() => setShowPromptInput((v) => !v)}
             disabled={isLoadingSummary}
             className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors disabled:opacity-50"
-            title="Skapar en sammanfattning av transkriberingen med hjälp av AI och visar den nedanför."
+            title="Skapa en sammanfattning av transkriberingen med hjälp av AI och visa den nedanför."
           >
-            {isLoadingSummary 
+            {isLoadingSummary
               ? 'Sammanfattar...'
-              : `Sammanfatta med ${transcriptionMethod === 'openai' && isValidOpenAIKey ? 'OpenAI' : 'Gemini'}`
-            }
+              : `Sammanfatta med ${transcriptionMethod === 'openai' && isValidOpenAIKey ? 'OpenAI' : 'Gemini'}`}
           </button>
         )}
       </div>
+      {showPromptInput && (
+        <div className="mt-4 p-4 bg-yellow-50 border-l-4 border-yellow-600 rounded">
+          <label htmlFor="customPrompt" className="block text-sm font-semibold text-gray-900 mb-2">
+            Egen prompt för sammanfattning (valfritt)
+          </label>
+          <textarea
+            id="customPrompt"
+            value={customPrompt}
+            onChange={e => setCustomPrompt(e.target.value)}
+            rows={5}
+            className="w-full p-2 border border-gray-400 rounded-md text-gray-900 bg-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-600"
+            placeholder="Skriv din egen instruktion till AI:n här..."
+            style={{ minHeight: 80 }}
+          />
+          <div className="flex justify-end mt-2 gap-2">
+            <button
+              onClick={() => setShowPromptInput(false)}
+              className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300"
+            >
+              Avbryt
+            </button>
+            <button
+              onClick={handleSummarize}
+              disabled={isLoadingSummary}
+              className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50"
+            >
+              Skapa sammanfattning
+            </button>
+          </div>
+        </div>
+      )}
       {showSummary && summary && (
         <SummaryDisplay summary={summary} onExportWord={handleExportWord} />
       )}

@@ -87,8 +87,19 @@ export async function transcribeWithGemini(
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
     
-    // Konfigurera förfrågan
-    const prompt = "Transkribera den här ljudfilen så noggrant som möjligt till text. Svara ENDAST med transkriberingen, utan några extra förklaringar eller text. Språket är svenska.";
+    // Förbättrad prompt enligt nya instruktioner
+    const prompt = `
+Syfte: Sammanfattningen ska fungera både som en minnesanteckning för deltagarna och som information för frånvarande kollegor och chefen. Den ska ligga till grund för vidare arbete.
+Målgrupp: Projektteamet (som deltog) och deras chef (som inte deltog).
+Omfattning och format: Sammanfattningen ska vara cirka en halv till en A4-sida. Använd tydliga rubriker, minst för 'Beslut' och 'Åtgärdspunkter'.
+Inkludera: Fokusera på fattade beslut, identifierade åtgärdspunkter (inklusive ansvarig person och deadline), samt de huvudsakliga diskussionspunkterna som var avgörande för besluten.
+Exkludera/Hantera: Exkludera småprat. Övrig information som är relevant men inte passar under 'Beslut' eller 'Åtgärdspunkter' kan samlas under en lämplig rubrik som t.ex. 'Övrigt' eller 'Viktiga diskussioner'.
+Stil: Skriv i en tydlig, kortfattad och handlingsorienterad stil.
+Prioritera: Se till att alla deadlines och annan ytterst viktig information är tydligt markerade. Använd punktlistor där det är lämpligt för bättre läsbarhet.
+
+Här är texten:
+${base64Audio}
+`;
     
     // Skapa bild-delen (vi behandlar ljudet som en bild för Gemini API)
     const imageParts = [{
@@ -276,19 +287,27 @@ export async function transcribeLocally(audioBlob: Blob): Promise<TranscriptionR
 // Funktion för att sammanfatta text med Google Gemini API
 export async function summarizeWithGemini(
   text: string,
-  apiKey: string
+  apiKey: string,
+  customPrompt?: string
 ): Promise<string> {
   try {
     // Skapa en Google Gemini-klient
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
     
-    // Konfigurera förfrågan
-    const prompt = `Sammanfatta följande mötestext på ett koncist och strukturerat sätt. 
-    Behåll viktiga punkter, beslut och åtgärdspunkter. 
-    Svara på svenska, formatterat med tydliga rubriker och punktlistor där lämpligt:
-
-    ${text}`;
+    // Använd custom prompt om den finns, annars standardprompten
+    const prompt = customPrompt && customPrompt.trim().length > 0
+      ? `${customPrompt}\n\nHär är texten:\n${text}`
+      : `
+Syfte: Sammanfattningen ska fungera både som en minnesanteckning för deltagarna och som information för frånvarande kollegor och chefen. Den ska ligga till grund för vidare arbete.
+Målgrupp: Projektteamet (som deltog) och deras chef (som inte deltog).
+Omfattning och format: Sammanfattningen ska vara cirka en halv till en A4-sida. Använd tydliga rubriker, minst för 'Beslut' och 'Åtgärdspunkter'.
+Inkludera: Fokusera på fattade beslut, identifierade åtgärdspunkter (inklusive ansvarig person och deadline), samt de huvudsakliga diskussionspunkterna som var avgörande för besluten.
+Exkludera/Hantera: Exkludera småprat. Övrig information som är relevant men inte passar under 'Beslut' eller 'Åtgärdspunkter' kan samlas under en lämplig rubrik som t.ex. 'Övrigt' eller 'Viktiga diskussioner'.
+Stil: Skriv i en tydlig, kortfattad och handlingsorienterad stil.
+Prioritera: Se till att alla deadlines och annan ytterst viktig information är tydligt markerade. Använd punktlistor där det är lämpligt för bättre läsbarhet.
+\nHär är texten:\n${text}
+`;
     
     // Skicka förfrågan till Gemini
     const result = await model.generateContent(prompt);
