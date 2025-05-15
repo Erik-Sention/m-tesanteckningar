@@ -1,13 +1,9 @@
 import { useState, useEffect } from 'react';
 import { TranscriptionMethod } from '../app/page';
-
-// Standardnyckel för Gemini API
-const DEFAULT_GEMINI_API_KEY = 'AIzaSyDKv9boBXUdQ4N9ckgTCIdGf3PrFW6sVUw';
+import { useEnv } from '../hooks/useEnv';
 
 interface SettingsProps {
-  openAIApiKey: string;
   geminiApiKey: string;
-  onOpenAIApiKeyChange: (apiKey: string) => void;
   onGeminiApiKeyChange: (apiKey: string) => void;
   transcriptionMethod: TranscriptionMethod;
   onTranscriptionMethodChange: (method: TranscriptionMethod) => void;
@@ -15,29 +11,29 @@ interface SettingsProps {
 }
 
 export default function Settings({ 
-  openAIApiKey, 
   geminiApiKey,
-  onOpenAIApiKeyChange, 
   onGeminiApiKeyChange,
   transcriptionMethod, 
   onTranscriptionMethodChange,
   webSpeechSupported
 }: SettingsProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [localOpenAIKey, setLocalOpenAIKey] = useState(openAIApiKey);
-  const [localGeminiKey, setLocalGeminiKey] = useState(geminiApiKey || DEFAULT_GEMINI_API_KEY);
+  const [localGeminiKey, setLocalGeminiKey] = useState(geminiApiKey || '');
   const [localTranscriptionMethod, setLocalTranscriptionMethod] = useState(transcriptionMethod);
+  
+  const { env } = useEnv();
+  
+  const isGeminiFromEnv = Boolean(env?.NEXT_PUBLIC_GEMINI_API_KEY) || (geminiApiKey && geminiApiKey.startsWith('AIza'));
 
   useEffect(() => {
-    // Uppdatera lokal nyckel om den ändras från props
-    setLocalGeminiKey(geminiApiKey || DEFAULT_GEMINI_API_KEY);
+    setLocalGeminiKey(geminiApiKey || '');
   }, [geminiApiKey]);
 
   const handleSave = () => {
-    onOpenAIApiKeyChange(localOpenAIKey);
-    onGeminiApiKeyChange(localGeminiKey);
+    if (!isGeminiFromEnv) {
+      onGeminiApiKeyChange(localGeminiKey);
+    }
     
-    // Förhindra användaren från att välja lokal transkribering om Web Speech API inte stöds
     if (!webSpeechSupported && localTranscriptionMethod === 'local') {
       alert('Din webbläsare stöder inte Web Speech API. Du kan inte använda lokal transkribering.');
       setLocalTranscriptionMethod('gemini');
@@ -79,9 +75,20 @@ export default function Settings({
       </button>
 
       {isOpen && (
-          <div className="fixed inset-0 bg-transparent bg-opacity-50 flex items-center justify-center z-50">
+          <div className="fixed inset-0 bg-[rgba(0,0,50,0.3)] flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-md">
             <h2 className="text-xl font-semibold text-gray-800 mb-4">Inställningar</h2>
+            
+            <div className="mb-4">
+              <div className="flex flex-col gap-2">
+                {geminiApiKey && (
+                  <div className="p-3 bg-green-50 border-l-4 border-green-400 text-green-700 text-sm">
+                    <div className="font-semibold">Google Gemini API</div>
+                    <div>{isGeminiFromEnv ? 'Förkonfigurerad och redo att användas' : 'Konfigurerad manuellt'}</div>
+                  </div>
+                )}
+              </div>
+            </div>
             
             <div className="mb-6">
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -105,24 +112,15 @@ export default function Settings({
                   </div>
                 )}
                 
-                <label className="flex items-center space-x-3 cursor-pointer">
+                <label className={`flex items-center space-x-3 cursor-pointer ${!geminiApiKey ? 'opacity-50' : ''}`}>
                   <input
                     type="radio"
                     checked={localTranscriptionMethod === 'gemini'}
                     onChange={() => setLocalTranscriptionMethod('gemini')}
                     className="form-radio h-5 w-5 text-blue-600"
+                    disabled={!geminiApiKey}
                   />
                   <span className="text-gray-700 text-sm font-medium">Använd Google Gemini API</span>
-                </label>
-                
-                <label className="flex items-center space-x-3 cursor-pointer">
-                  <input
-                    type="radio"
-                    checked={localTranscriptionMethod === 'openai'}
-                    onChange={() => setLocalTranscriptionMethod('openai')}
-                    className="form-radio h-5 w-5 text-blue-600"
-                  />
-                  <span className="text-gray-700 text-sm font-medium">Använd OpenAI API</span>
                 </label>
               </div>
               
@@ -131,43 +129,26 @@ export default function Settings({
               </p>
             </div>
             
-            <div className={`mb-4 ${localTranscriptionMethod !== 'gemini' ? 'opacity-50' : ''}`}>
-              <label htmlFor="geminiKey" className="block text-sm font-medium text-gray-700 mb-1">
-                Google Gemini API-nyckel 
-                {localTranscriptionMethod !== 'gemini' && ' (inte nödvändig med vald metod)'}
-              </label>
-              <input
-                type="password"
-                id="geminiKey"
-                value={localGeminiKey}
-                onChange={(e) => setLocalGeminiKey(e.target.value)}
-                className="w-full p-2 border border-gray-300 rounded-md"
-                placeholder="AIza..."
-                disabled={localTranscriptionMethod !== 'gemini'}
-              />
-              <p className="mt-1 text-sm text-gray-500">
-                En standardnyckel är redan förifylld. Du kan få en egen nyckel gratis på <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Google AI Studio</a>.
-              </p>
-            </div>
-            
-            <div className={`mb-4 ${localTranscriptionMethod !== 'openai' ? 'opacity-50' : ''}`}>
-              <label htmlFor="openaiKey" className="block text-sm font-medium text-gray-700 mb-1">
-                OpenAI API-nyckel
-                {localTranscriptionMethod !== 'openai' && ' (inte nödvändig med vald metod)'}
-              </label>
-              <input
-                type="password"
-                id="openaiKey"
-                value={localOpenAIKey}
-                onChange={(e) => setLocalOpenAIKey(e.target.value)}
-                className="w-full p-2 border border-gray-300 rounded-md"
-                placeholder="sk-..."
-                disabled={localTranscriptionMethod !== 'openai'}
-              />
-              <p className="mt-1 text-sm text-gray-500">
-                Krävs för att använda OpenAI API. Du kan få en nyckel på <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">OpenAI:s webbplats</a>.
-              </p>
-            </div>
+            {!isGeminiFromEnv && (
+              <div className={`mb-4 ${localTranscriptionMethod !== 'gemini' ? 'opacity-50' : ''}`}>
+                <label htmlFor="geminiKey" className="block text-sm font-medium text-gray-700 mb-1">
+                  Google Gemini API-nyckel 
+                  {localTranscriptionMethod !== 'gemini' && ' (inte nödvändig med vald metod)'}
+                </label>
+                <input
+                  type="password"
+                  id="geminiKey"
+                  value={localGeminiKey}
+                  onChange={(e) => setLocalGeminiKey(e.target.value)}
+                  className="w-full p-2 border border-gray-300 rounded-md"
+                  placeholder="AIza..."
+                  disabled={localTranscriptionMethod !== 'gemini'}
+                />
+                <p className="mt-1 text-sm text-gray-500">
+                  Du behöver en API-nyckel för att använda Google Gemini. Du kan få en egen nyckel gratis på <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Google AI Studio</a>.
+                </p>
+              </div>
+            )}
             
             <div className="flex justify-end gap-2">
               <button

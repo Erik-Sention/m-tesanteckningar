@@ -1,50 +1,65 @@
+import React from 'react';
 import { TranscriptionMethod } from '../app/page';
 import { useState } from 'react';
-import { summarizeWithGemini } from '../utils/transcription';
+import { summarizeWithGemini, summarizeWithOpenAI } from '../utils/transcription';
+import SummaryDisplay from './SummaryDisplay';
+import { exportSummaryToWord } from '../utils/exportWord';
 
 interface TranscriptionDisplayProps {
   transcript: string;
   isLoading: boolean;
   transcriptionMethod: TranscriptionMethod;
   geminiApiKey: string;
+  openAIApiKey?: string;
 }
 
 export default function TranscriptionDisplay({
   transcript,
   isLoading,
   transcriptionMethod,
-  geminiApiKey
+  geminiApiKey,
+  openAIApiKey = ''
 }: TranscriptionDisplayProps) {
+  const [showSummary, setShowSummary] = useState(false);
+  const [summary, setSummary] = useState<string | null>(null);
   const [isLoadingSummary, setIsLoadingSummary] = useState(false);
+
+  // Kontrollera att OpenAI-nyckeln finns (ej tom)
+  const isValidOpenAIKey = openAIApiKey && openAIApiKey.trim().length > 0;
 
   const handleSummarize = async () => {
     if (!transcript || transcript.trim() === '') {
       alert('Det finns ingen text att sammanfatta.');
       return;
     }
-    
-    if (!geminiApiKey) {
-      alert('Ingen Gemini API-nyckel hittades. Vänligen ange en API-nyckel i inställningarna.');
+    const useOpenAI = transcriptionMethod === 'openai' && isValidOpenAIKey;
+    const useGemini = (transcriptionMethod === 'gemini' || !useOpenAI) && geminiApiKey;
+    if (!useOpenAI && !useGemini) {
+      alert('Ingen giltig API-nyckel hittades. Vänligen ange en API-nyckel i inställningarna.');
       return;
     }
-    
     try {
       setIsLoadingSummary(true);
-      const summary = await summarizeWithGemini(transcript, geminiApiKey);
-      
-      // Skapa en nedladdningslänk för sammanfattningen
-      const element = document.createElement('a');
-      const file = new Blob([summary], {type: 'text/plain'});
-      element.href = URL.createObjectURL(file);
-      element.download = `sammanfattning-${new Date().toISOString().slice(0, 10)}.txt`;
-      document.body.appendChild(element);
-      element.click();
-      document.body.removeChild(element);
+      let summaryText;
+      if (useOpenAI) {
+        summaryText = await summarizeWithOpenAI(transcript, openAIApiKey);
+      } else {
+        summaryText = await summarizeWithGemini(transcript, geminiApiKey);
+      }
+      setSummary(summaryText);
+      setShowSummary(true);
     } catch (error) {
       console.error('Fel vid sammanfattning:', error);
-      alert('Något gick fel vid skapandet av sammanfattningen. Kontrollera att din Gemini API-nyckel är giltig och att du har internetanslutning.');
+      const apiName = useOpenAI ? 'OpenAI' : 'Gemini';
+      alert(`Något gick fel vid skapandet av sammanfattningen. Kontrollera att din ${apiName} API-nyckel är giltig och att du har internetanslutning.`);
     } finally {
       setIsLoadingSummary(false);
+    }
+  };
+
+  const handleExportWord = () => {
+    if (summary) {
+      exportSummaryToWord(summary);
     }
   };
 
@@ -118,17 +133,23 @@ export default function TranscriptionDisplay({
         >
           Ladda ner som textfil
         </a>
-        {geminiApiKey && (
+        {(geminiApiKey || openAIApiKey) && (
           <button
             onClick={handleSummarize}
             disabled={isLoadingSummary}
             className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors disabled:opacity-50"
-            title="Skapar en sammanfattning av transkriberingen med hjälp av AI och laddar ner den som en textfil"
+            title="Skapar en sammanfattning av transkriberingen med hjälp av AI och visar den nedanför."
           >
-            {isLoadingSummary ? 'Sammanfattar...' : 'Ladda ner som sammanfattning'}
+            {isLoadingSummary 
+              ? 'Sammanfattar...'
+              : `Sammanfatta med ${transcriptionMethod === 'openai' && isValidOpenAIKey ? 'OpenAI' : 'Gemini'}`
+            }
           </button>
         )}
       </div>
+      {showSummary && summary && (
+        <SummaryDisplay summary={summary} onExportWord={handleExportWord} />
+      )}
     </div>
   );
 } 

@@ -5,7 +5,6 @@ import { useRecording } from '../hooks/useRecording';
 import { useEnv } from '../hooks/useEnv';
 import RecordingButton from '../components/RecordingButton';
 import TranscriptionDisplay from '../components/TranscriptionDisplay';
-import Header from '../components/Header';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { transcribeWithOpenAI, transcribeLocally, isSpeechRecognitionSupported, transcribeWithGemini } from '../utils/transcription';
 import { createDownloadLink } from '../utils/recording';
@@ -28,16 +27,43 @@ export default function Home() {
   // Initialisera API-nycklar och inställningar från miljövariabler
   useEffect(() => {
     if (!envLoading && env) {
+      console.log("Miljövariabler laddade:");
+      
       if (env.NEXT_PUBLIC_OPENAI_API_KEY) {
-        setApiKey(env.NEXT_PUBLIC_OPENAI_API_KEY);
+        const apiKeyValue = env.NEXT_PUBLIC_OPENAI_API_KEY.trim();
+        console.log(`OpenAI API-nyckel hittad!`);
+        console.log(`- Längd efter trimming: ${apiKeyValue.length}`);
+        console.log(`- Börjar med: ${apiKeyValue.substring(0, 10)}...`);
+        console.log(`- Börjar med 'sk-': ${apiKeyValue.startsWith('sk-')}`);
+        console.log(`- Börjar med 'sk-proj-': ${apiKeyValue.startsWith('sk-proj-')}`);
+        
+        // Kontrollera om det är en giltig OpenAI-nyckel baserat på format
+        const isValidFormat = apiKeyValue.startsWith('sk-') || apiKeyValue.startsWith('sk-proj-');
+        console.log(`- Format är giltigt: ${isValidFormat}`);
+        
+        if (isValidFormat) {
+          setApiKey(apiKeyValue);
+          console.log(`- API-nyckel sparad i state, längd: ${apiKeyValue.length}`);
+        } else {
+          console.warn(`- API-nyckeln har fel format och kommer inte att användas för OpenAI!`);
+        }
+      } else {
+        console.log("Ingen OpenAI API-nyckel hittad i miljövariabler");
       }
       
       if (env.NEXT_PUBLIC_GEMINI_API_KEY) {
-        setGeminiApiKey(env.NEXT_PUBLIC_GEMINI_API_KEY);
+        const geminiKeyValue = env.NEXT_PUBLIC_GEMINI_API_KEY.trim();
+        console.log(`Gemini API-nyckel hittad! Första 5 tecknen: ${geminiKeyValue.substring(0, 5)}...`);
+        setGeminiApiKey(geminiKeyValue);
+      } else {
+        console.log("Ingen Gemini API-nyckel hittad i miljövariabler");
       }
       
       if (env.NEXT_PUBLIC_DEFAULT_TRANSCRIPTION_METHOD as TranscriptionMethod) {
+        console.log(`Standard transkriptionsmetod: ${env.NEXT_PUBLIC_DEFAULT_TRANSCRIPTION_METHOD}`);
         setTranscriptionMethod(env.NEXT_PUBLIC_DEFAULT_TRANSCRIPTION_METHOD as TranscriptionMethod);
+      } else {
+        console.log("Ingen standard transkriptionsmetod angiven");
       }
     }
   }, [env, envLoading]);
@@ -90,23 +116,6 @@ export default function Home() {
     }
   }, [env, webSpeechSupported]);
 
-  // Spara API-nycklar till localStorage när de ändras, men bara om de inte kommer från miljövariabler
-  const handleApiKeyChange = (newApiKey: string) => {
-    setApiKey(newApiKey);
-    const hasEnvOpenAI = env && env.NEXT_PUBLIC_OPENAI_API_KEY;
-    if (!hasEnvOpenAI) {
-      localStorage.setItem('openai-api-key', newApiKey);
-    }
-  };
-  
-  const handleGeminiApiKeyChange = (newApiKey: string) => {
-    setGeminiApiKey(newApiKey);
-    const hasEnvGemini = env && env.NEXT_PUBLIC_GEMINI_API_KEY;
-    if (!hasEnvGemini) {
-      localStorage.setItem('gemini-api-key', newApiKey);
-    }
-  };
-  
   // Ändra transkriberings-metod
   const handleTranscriptionMethodChange = (method: TranscriptionMethod) => {
     // Om Web Speech API inte stöds, förhindra att användaren väljer lokal transkribering
@@ -133,35 +142,51 @@ export default function Home() {
     onRecordingComplete: async (blob) => {
       // Automatiskt starta transkribering när inspelningen är klar
       if (blob) {
+        // Validera OpenAI API-nyckel formatering om metoden är openai
+        const isValidOpenAIKey = apiKey && (apiKey.startsWith('sk-') || apiKey.startsWith('sk-proj-'));
+        
         if (transcriptionMethod === 'local' && webSpeechSupported) {
           await handleLocalTranscribe(blob);
-        } else if (transcriptionMethod === 'openai' && apiKey) {
+        } else if (transcriptionMethod === 'openai' && isValidOpenAIKey) {
           await handleOpenAITranscribe(blob);
         } else if (transcriptionMethod === 'gemini' && geminiApiKey) {
           await handleGeminiTranscribe(blob);
-        } else if (!webSpeechSupported && !geminiApiKey && !apiKey) {
-          alert('Du har inte angett någon API-nyckel för Gemini eller OpenAI. Ladda ner inspelningen och använd ett externt verktyg för att transkribera den.');
+        } else if (transcriptionMethod === 'openai' && !isValidOpenAIKey && geminiApiKey) {
+          // Fallback till Gemini om OpenAI är valt men nyckeln inte är giltig
+          alert('OpenAI API-nyckeln saknas eller är ogiltig. Använder Gemini istället.');
+          await handleGeminiTranscribe(blob);
+        } else if (!webSpeechSupported && !geminiApiKey && !isValidOpenAIKey) {
+          alert('Du har inte angett någon giltig API-nyckel. Ladda ner inspelningen och använd ett externt verktyg för att transkribera den.');
         }
       }
     }
   });
 
   const handleOpenAITranscribe = async (blob: Blob) => {
+    console.log("=== OpenAI transkribering påbörjas ===");
+    console.log(`OpenAI API-nyckel info:`);
+    console.log(`- Finns nyckel: ${Boolean(apiKey)}`);
+    
     if (!apiKey) {
-      alert('Du behöver ange en OpenAI API-nyckel i inställningarna först.');
+      alert('OpenAI API-nyckel saknas helt. Kontrollera dina miljövariabler eller ange en nyckel manuellt.');
       return;
     }
-
+    
+    // Rensa nyckeln från eventuella oönskade tecken
+    const trimmedApiKey = apiKey.trim();
+    if (trimmedApiKey !== apiKey) {
+      setApiKey(trimmedApiKey);
+    }
+    
+    // INGEN prefixvalidering längre
     setIsTranscribing(true);
     setTranscriptionProgress(0);
     try {
-      setTranscriptionProgress(50); // Simulera förlopp (kan inte hämta faktiskt förlopp från OpenAI API)
-      const result = await transcribeWithOpenAI(blob, apiKey);
+      const result = await transcribeWithOpenAI(blob, trimmedApiKey);
       setTranscript(result.text);
       setTranscriptionProgress(100);
     } catch (error) {
-      console.error('Fel vid transkribering med OpenAI:', error);
-      alert('Något gick fel vid transkriberingen med OpenAI. Vänligen försök igen eller ladda ner inspelningen och använd ett externt verktyg.');
+      alert(`Något gick fel vid transkriberingen med OpenAI: ${error instanceof Error ? error.message : 'Okänt fel'}. Vänligen försök igen eller ladda ner inspelningen och använd ett externt verktyg.`);
     } finally {
       setIsTranscribing(false);
     }
@@ -254,17 +279,64 @@ export default function Home() {
 
   return (
     <div className="min-h-screen flex flex-col">
-      <Header 
-        openAIApiKey={apiKey} 
-        geminiApiKey={geminiApiKey}
-        onOpenAIApiKeyChange={handleApiKeyChange} 
-        onGeminiApiKeyChange={handleGeminiApiKeyChange}
-        transcriptionMethod={transcriptionMethod}
-        onTranscriptionMethodChange={handleTranscriptionMethodChange}
-        webSpeechSupported={webSpeechSupported}
-      />
-      
+      <h1 className="text-3xl font-bold text-center mt-6 mb-8" style={{ color: '#A259C4', letterSpacing: '2px' }}>SENTION NOTES</h1>
       <main className="flex-1 max-w-4xl w-full mx-auto p-4 sm:p-6 lg:p-8 flex flex-col gap-8">
+        {/* Transkriberingsval och API-nyckel */}
+        <section className="bg-white p-6 rounded-lg shadow-md mb-4">
+          <h2 className="text-lg font-semibold text-gray-800 mb-2">Välj transkriberingsmetod</h2>
+          <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+            <label className="flex items-center space-x-2 cursor-pointer">
+              <input
+                type="radio"
+                checked={transcriptionMethod === 'local'}
+                onChange={() => handleTranscriptionMethodChange('local')}
+                className="form-radio h-5 w-5 text-blue-600"
+                disabled={!webSpeechSupported}
+              />
+              <span className="text-gray-900 font-medium">Web Speech API (lokalt)</span>
+              {!webSpeechSupported && (
+                <span className="ml-2 text-xs text-yellow-700 bg-yellow-100 px-2 py-1 rounded">Stöds ej i din webbläsare</span>
+              )}
+            </label>
+            <label className="flex items-center space-x-2 cursor-pointer">
+              <input
+                type="radio"
+                checked={transcriptionMethod === 'gemini'}
+                onChange={() => handleTranscriptionMethodChange('gemini')}
+                className="form-radio h-5 w-5 text-purple-600"
+              />
+              <span className="text-gray-900 font-medium">Google Gemini API</span>
+            </label>
+          </div>
+          {transcriptionMethod === 'gemini' && (
+            <div className="mt-4">
+              {geminiApiKey && geminiApiKey.startsWith('AIza') ? (
+                <div className="p-3 bg-green-50 border-l-4 border-green-400 text-green-700 text-sm rounded">
+                  <span className="font-semibold">Google Gemini API-nyckel är konfigurerad och redo att användas.</span>
+                </div>
+              ) : (
+                <>
+                  <label htmlFor="geminiKey" className="block text-sm font-medium text-gray-900 mb-1">
+                    Google Gemini API-nyckel
+                  </label>
+                  <input
+                    type="password"
+                    id="geminiKey"
+                    value={geminiApiKey}
+                    onChange={e => setGeminiApiKey(e.target.value)}
+                    className="w-full p-2 border border-gray-400 rounded-md text-gray-900 bg-white placeholder-gray-500"
+                    placeholder="AIza..."
+                    autoComplete="off"
+                  />
+                  <p className="mt-1 text-sm text-gray-700">
+                    Du behöver en API-nyckel för att använda Gemini. Skaffa en gratis på <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-blue-700 underline">Google AI Studio</a>.
+                  </p>
+                </>
+              )}
+            </div>
+          )}
+        </section>
+        
         <section className="bg-white p-6 rounded-lg shadow-md">
           <h2 className="text-xl font-semibold text-gray-800 mb-4">Spela in möte</h2>
           
@@ -345,6 +417,7 @@ export default function Home() {
             isLoading={isTranscribing} 
             transcriptionMethod={activeMethod}
             geminiApiKey={geminiApiKey}
+            openAIApiKey={apiKey}
           />
         </section>
       </main>

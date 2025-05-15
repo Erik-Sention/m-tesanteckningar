@@ -1,25 +1,19 @@
 import Settings from './Settings';
 import { TranscriptionMethod } from '../app/page';
 
-interface HeaderProps {
-  openAIApiKey: string;
-  geminiApiKey: string;
-  onOpenAIApiKeyChange: (apiKey: string) => void;
-  onGeminiApiKeyChange: (apiKey: string) => void;
-  transcriptionMethod: TranscriptionMethod;
-  onTranscriptionMethodChange: (method: TranscriptionMethod) => void;
-  webSpeechSupported: boolean;
-}
-
 export default function Header({ 
-  openAIApiKey, 
   geminiApiKey,
-  onOpenAIApiKeyChange, 
   onGeminiApiKeyChange,
   transcriptionMethod, 
   onTranscriptionMethodChange,
   webSpeechSupported
-}: HeaderProps) {
+}: {
+  geminiApiKey: string;
+  onGeminiApiKeyChange: (apiKey: string) => void;
+  transcriptionMethod: TranscriptionMethod;
+  onTranscriptionMethodChange: (method: TranscriptionMethod) => void;
+  webSpeechSupported: boolean;
+}) {
   return (
     <header className="bg-white shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
@@ -42,9 +36,7 @@ export default function Header({
         </div>
         <div>
           <Settings 
-            openAIApiKey={openAIApiKey} 
             geminiApiKey={geminiApiKey}
-            onOpenAIApiKeyChange={onOpenAIApiKeyChange} 
             onGeminiApiKeyChange={onGeminiApiKeyChange}
             transcriptionMethod={transcriptionMethod}
             onTranscriptionMethodChange={onTranscriptionMethodChange}

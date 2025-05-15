@@ -8,19 +8,68 @@ export async function transcribeWithOpenAI(
   apiKey: string
 ): Promise<TranscriptionResult> {
   try {
-    const openai = new OpenAI({ apiKey });
+    console.log("transcribeWithOpenAI startad");
     
+    // Rensa API-nyckeln från eventuella oönskade tecken
+    const trimmedApiKey = apiKey.trim();
+    if (!trimmedApiKey) {
+      throw new Error('OpenAI API-nyckel saknas.');
+    }
+    
+    console.log(`- API nyckel börjar med: ${trimmedApiKey.substring(0, 10)}...`);
+    console.log(`- API nyckel längd: ${trimmedApiKey.length}`);
+    console.log(`- API nyckel sk- format: ${trimmedApiKey.startsWith('sk-')}`);
+    console.log(`- API nyckel sk-proj- format: ${trimmedApiKey.startsWith('sk-proj-')}`);
+    console.log(`- Audio blob storlek: ${audioBlob.size} bytes`);
+    console.log(`- Audio blob typ: ${audioBlob.type}`);
+    
+    console.log("Skapar OpenAI klient...");
+    const openai = new OpenAI({ 
+      apiKey: trimmedApiKey,
+      dangerouslyAllowBrowser: true  // Tillåt användning i webbläsaren
+    });
+    
+    console.log("Konverterar blob till File-objekt...");
+    const file = await toFile(audioBlob, 'recording.wav');
+    console.log(`- Skapat File-objekt: ${file.name}, ${file.size} bytes, ${file.type}`);
+    
+    console.log("Anropar OpenAI transkriberings-API...");
     const response = await openai.audio.transcriptions.create({
-      file: await toFile(audioBlob, 'recording.wav'),
+      file: file,
       model: 'whisper-1',
       language: 'sv'
     });
+    
+    console.log("Fick svar från OpenAI:");
+    console.log(`- Textlängd: ${response.text.length} tecken`);
+    console.log(`- Början av text: ${response.text.substring(0, 30)}...`);
     
     return {
       text: response.text
     };
   } catch (error) {
-    console.error('Fel vid transkribering med OpenAI:', error);
+    console.error("Fel i transcribeWithOpenAI:", error);
+    
+    // Mer detaljerad loggning av felet
+    if (error instanceof Error) {
+      console.error(`- Feltyp: ${error.name}`);
+      console.error(`- Felmeddelande: ${error.message}`);
+      console.error(`- Stack trace: ${error.stack}`);
+      
+      // Speciell hantering för vanliga OpenAI-fel
+      if (error.message.includes('401')) {
+        console.error("401 AUTH FEL: API-nyckeln är ogiltig eller saknar rättigheter");
+      } else if (error.message.includes('429')) {
+        console.error("429 RATE LIMIT: För många anrop till API:et");
+      } else if (error.message.includes('400')) {
+        console.error("400 BAD REQUEST: Något i förfrågan är felaktigt, kontrollera filens format");
+      } else if (error.message.includes('500')) {
+        console.error("500 SERVER ERROR: OpenAI:s servrar har problem");
+      } else if (error.message.includes('Connection')) {
+        console.error("ANSLUTNINGSFEL: Kontrollera din internetanslutning");
+      }
+    }
+    
     throw error;
   }
 }
@@ -249,6 +298,44 @@ export async function summarizeWithGemini(
     return summary;
   } catch (error) {
     console.error('Fel vid sammanfattning med Gemini:', error);
+    throw error;
+  }
+}
+
+// Funktion för att sammanfatta text med OpenAI
+export async function summarizeWithOpenAI(
+  text: string,
+  apiKey: string
+): Promise<string> {
+  try {
+    // Rensa API-nyckeln från eventuella oönskade tecken
+    const trimmedApiKey = apiKey.trim();
+    if (!trimmedApiKey) {
+      throw new Error('OpenAI API-nyckel saknas.');
+    }
+    const openai = new OpenAI({ 
+      apiKey: trimmedApiKey,
+      dangerouslyAllowBrowser: true  // Tillåt användning i webbläsaren
+    });
+    
+    const response = await openai.chat.completions.create({
+      model: "gpt-3.5-turbo",
+      messages: [
+        {
+          role: "system",
+          content: "Du är en assistent som sammanfattar mötesanteckningar på svenska. Skapa en koncis och välorganiserad sammanfattning som bevarar viktiga punkter, beslut och åtgärdspunkter. Formattera svaret med tydliga rubriker och punktlistor när det är lämpligt."
+        },
+        {
+          role: "user",
+          content: text
+        }
+      ],
+      temperature: 0.5,
+    });
+    
+    return response.choices[0].message.content || "Kunde inte generera sammanfattning.";
+  } catch (error) {
+    console.error('Fel vid sammanfattning med OpenAI:', error);
     throw error;
   }
 } 
