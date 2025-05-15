@@ -417,7 +417,6 @@ export default function Home() {
             isLoading={isTranscribing} 
             transcriptionMethod={activeMethod}
             geminiApiKey={geminiApiKey}
-            openAIApiKey={apiKey}
           />
         </section>
       </main>
