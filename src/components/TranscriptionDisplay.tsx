@@ -1,7 +1,7 @@
 import React from 'react';
 import { TranscriptionMethod } from '../app/page';
 import { useState, useEffect } from 'react';
-import { summarizeWithGemini, summarizeWithOpenAI } from '../utils/transcription';
+import { summarizeWithGemini } from '../utils/transcription';
 import SummaryDisplay from './SummaryDisplay';
 import { exportSummaryToWord } from '../utils/exportWord';
 
@@ -10,7 +10,6 @@ interface TranscriptionDisplayProps {
   isLoading: boolean;
   transcriptionMethod: TranscriptionMethod;
   geminiApiKey: string;
-  openAIApiKey?: string;
 }
 
 export default function TranscriptionDisplay({
@@ -18,7 +17,6 @@ export default function TranscriptionDisplay({
   isLoading,
   transcriptionMethod,
   geminiApiKey,
-  openAIApiKey = ''
 }: TranscriptionDisplayProps) {
   const [showSummary, setShowSummary] = useState(false);
   const [summary, setSummary] = useState<string | null>(null);
@@ -37,39 +35,28 @@ export default function TranscriptionDisplay({
     if (customPrompt) localStorage.setItem('custom-summary-prompt', customPrompt);
   }, [customPrompt]);
 
-  // Kontrollera att OpenAI-nyckeln finns (ej tom)
-  const isValidOpenAIKey = openAIApiKey && openAIApiKey.trim().length > 0;
-
   const handleSummarize = async () => {
     if (!transcript || transcript.trim() === '') {
       alert('Det finns ingen text att sammanfatta.');
       return;
     }
-    const useOpenAI = transcriptionMethod === 'openai' && isValidOpenAIKey;
-    const useGemini = (transcriptionMethod === 'gemini' || !useOpenAI) && geminiApiKey;
-    if (!useOpenAI && !useGemini) {
-      alert('Ingen giltig API-nyckel hittades. Vänligen ange en API-nyckel i inställningarna.');
+    if (!geminiApiKey) {
+      alert('Ingen giltig Gemini API-nyckel hittades. Vänligen ange en API-nyckel i inställningarna.');
       return;
     }
     try {
       setIsLoadingSummary(true);
-      let summaryText;
-      if (useOpenAI) {
-        summaryText = await summarizeWithOpenAI(transcript, openAIApiKey);
-      } else {
-        summaryText = await summarizeWithGemini(
-          transcript,
-          geminiApiKey,
-          customPrompt && customPrompt.trim().length > 0 ? customPrompt : undefined
-        );
-      }
+      const summaryText = await summarizeWithGemini(
+        transcript,
+        geminiApiKey,
+        customPrompt && customPrompt.trim().length > 0 ? customPrompt : undefined
+      );
       setSummary(summaryText);
       setShowSummary(true);
       setShowPromptInput(false);
     } catch (error) {
       console.error('Fel vid sammanfattning:', error);
-      const apiName = useOpenAI ? 'OpenAI' : 'Gemini';
-      alert(`Något gick fel vid skapandet av sammanfattningen. Kontrollera att din ${apiName} API-nyckel är giltig och att du har internetanslutning.`);
+      alert('Något gick fel vid skapandet av sammanfattningen. Kontrollera att din Gemini API-nyckel är giltig och att du har internetanslutning.');
     } finally {
       setIsLoadingSummary(false);
     }
@@ -151,7 +138,7 @@ export default function TranscriptionDisplay({
         >
           Ladda ner som textfil
         </a>
-        {(geminiApiKey || openAIApiKey) && (
+        {geminiApiKey && (
           <button
             onClick={() => setShowPromptInput((v) => !v)}
             disabled={isLoadingSummary}
@@ -160,7 +147,7 @@ export default function TranscriptionDisplay({
           >
             {isLoadingSummary
               ? 'Sammanfattar...'
-              : `Sammanfatta med ${transcriptionMethod === 'openai' && isValidOpenAIKey ? 'OpenAI' : 'Gemini'}`}
+              : 'Sammanfatta med Gemini'}
           </button>
         )}
       </div>

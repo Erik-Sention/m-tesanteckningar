@@ -87,19 +87,8 @@ export async function transcribeWithGemini(
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
     
-    // Förbättrad prompt enligt nya instruktioner
-    const prompt = `
-Syfte: Sammanfattningen ska fungera både som en minnesanteckning för deltagarna och som information för frånvarande kollegor och chefen. Den ska ligga till grund för vidare arbete.
-Målgrupp: Projektteamet (som deltog) och deras chef (som inte deltog).
-Omfattning och format: Sammanfattningen ska vara cirka en halv till en A4-sida. Använd tydliga rubriker, minst för 'Beslut' och 'Åtgärdspunkter'.
-Inkludera: Fokusera på fattade beslut, identifierade åtgärdspunkter (inklusive ansvarig person och deadline), samt de huvudsakliga diskussionspunkterna som var avgörande för besluten.
-Exkludera/Hantera: Exkludera småprat. Övrig information som är relevant men inte passar under 'Beslut' eller 'Åtgärdspunkter' kan samlas under en lämplig rubrik som t.ex. 'Övrigt' eller 'Viktiga diskussioner'.
-Stil: Skriv i en tydlig, kortfattad och handlingsorienterad stil.
-Prioritera: Se till att alla deadlines och annan ytterst viktig information är tydligt markerade. Använd punktlistor där det är lämpligt för bättre läsbarhet.
-
-Här är texten:
-${base64Audio}
-`;
+    // Ny prompt: endast textkorrigering, ingen sammanfattning
+    const prompt = `Transkribera denna ljudfil så ordagrant som möjligt, men ta bort talspråksfyllnad (t.ex. 'eh', 'hmm'), onödiga upprepningar och gör texten lättläst. Gör ingen sammanfattning och lägg inte till egna rubriker eller punktlistor. Skriv på svenska.\nHär är ljudet:`;
     
     // Skapa bild-delen (vi behandlar ljudet som en bild för Gemini API)
     const imageParts = [{
@@ -168,10 +157,8 @@ export async function transcribeLocally(audioBlob: Blob): Promise<TranscriptionR
 
       // Samla ihop resultaten
       let finalTranscript = '';
-      let isRecognitionRunning = false;
 
       recognition.onstart = () => {
-        isRecognitionRunning = true;
         console.log('Taligenkänning startad');
       };
 
@@ -212,7 +199,6 @@ export async function transcribeLocally(audioBlob: Blob): Promise<TranscriptionR
 
         URL.revokeObjectURL(audioUrl);
         audio.pause();
-        isRecognitionRunning = false;
         recognition.abort();
         
         if (finalTranscript.length > 0) {
@@ -224,62 +210,9 @@ export async function transcribeLocally(audioBlob: Blob): Promise<TranscriptionR
           reject(new Error(`Fel vid taligenkänning: ${event.error}`));
         }
       };
-
-      recognition.onend = () => {
-        isRecognitionRunning = false;
-        console.log('Taligenkänning avslutad');
-        
-        // URL.revokeObjectURL(audioUrl);
-        // audio.pause();
-        
-        // Om inspelningen fortfarande spelas, starta om igenkänningen
-        if (!audio.ended && !audio.paused) {
-          console.log('Ljudet spelas fortfarande, startar om igenkänningen');
-          try {
-            recognition.start();
-          } catch (e) {
-            console.error('Kunde inte starta om igenkänningen:', e);
-          }
-          return;
-        }
-        
-        // Om vi inte har någon transkription, ge ett användbart meddelande
-        if (!finalTranscript.trim()) {
-          resolve({
-            text: "Transkriberingen kunde inte utföras med Web Speech API. För att transkribera ljudet, ladda ner inspelningen och använd ett externt verktyg som Microsoft Word eller Google Docs som har inbyggd taligenkänning."
-          });
-        } else {
-          resolve({
-            text: finalTranscript.trim()
-          });
-        }
-      };
-
-      // När ljudet är klart, stoppa igenkänningen efter en liten fördröjning
-      audio.onended = () => {
-        setTimeout(() => {
-          if (isRecognitionRunning) {
-            recognition.stop();
-          }
-        }, 1000); // Extra tid för att säkerställa att allt tal fångas
-      };
-
-      // Starta igenkänningen och spela upp ljudet
-      recognition.start();
-      
-      // Lägg till en liten fördröjning innan ljudet startar för att se till att recognition har startat
-      setTimeout(() => {
-        audio.play().catch(error => {
-          console.error('Fel vid uppspelning av ljud:', error);
-          recognition.abort();
-          URL.revokeObjectURL(audioUrl);
-          reject(error);
-        });
-      }, 500);
-      
     } catch (error) {
-      console.error('Fel vid lokal transkribering:', error);
-      reject(error);
+      console.error('Fel vid taligenkänning:', error);
+      throw error;
     }
   });
 }
@@ -291,70 +224,17 @@ export async function summarizeWithGemini(
   customPrompt?: string
 ): Promise<string> {
   try {
-    // Skapa en Google Gemini-klient
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-    
-    // Använd custom prompt om den finns, annars standardprompten
     const prompt = customPrompt && customPrompt.trim().length > 0
       ? `${customPrompt}\n\nHär är texten:\n${text}`
-      : `
-Syfte: Sammanfattningen ska fungera både som en minnesanteckning för deltagarna och som information för frånvarande kollegor och chefen. Den ska ligga till grund för vidare arbete.
-Målgrupp: Projektteamet (som deltog) och deras chef (som inte deltog).
-Omfattning och format: Sammanfattningen ska vara cirka en halv till en A4-sida. Använd tydliga rubriker, minst för 'Beslut' och 'Åtgärdspunkter'.
-Inkludera: Fokusera på fattade beslut, identifierade åtgärdspunkter (inklusive ansvarig person och deadline), samt de huvudsakliga diskussionspunkterna som var avgörande för besluten.
-Exkludera/Hantera: Exkludera småprat. Övrig information som är relevant men inte passar under 'Beslut' eller 'Åtgärdspunkter' kan samlas under en lämplig rubrik som t.ex. 'Övrigt' eller 'Viktiga diskussioner'.
-Stil: Skriv i en tydlig, kortfattad och handlingsorienterad stil.
-Prioritera: Se till att alla deadlines och annan ytterst viktig information är tydligt markerade. Använd punktlistor där det är lämpligt för bättre läsbarhet.
-\nHär är texten:\n${text}
-`;
-    
-    // Skicka förfrågan till Gemini
+      : `\nSyfte: Sammanfattningen ska fungera både som en minnesanteckning för deltagarna och som information för frånvarande kollegor och chefen. Den ska ligga till grund för vidare arbete.\nMålgrupp: Projektteamet (som deltog) och deras chef (som inte deltog).\nOmfattning och format: Sammanfattningen ska vara cirka en halv till en A4-sida. Använd tydliga rubriker, minst för 'Beslut' och 'Åtgärdspunkter'.\nInkludera: Fokusera på fattade beslut, identifierade åtgärdspunkter (inklusive ansvarig person och deadline), samt de huvudsakliga diskussionspunkterna som var avgörande för besluten.\nExkludera/Hantera: Exkludera småprat. Övrig information som är relevant men inte passar under 'Beslut' eller 'Åtgärdspunkter' kan samlas under en lämplig rubrik som t.ex. 'Övrigt' eller 'Viktiga diskussioner'.\nStil: Skriv i en tydlig, kortfattad och handlingsorienterad stil.\nPrioritera: Se till att alla deadlines och annan ytterst viktig information är tydligt markerade. Använd punktlistor där det är lämpligt för bättre läsbarhet.\n\nHär är texten:\n${text}`;
     const result = await model.generateContent(prompt);
     const response = await result.response;
     const summary = response.text();
-    
     return summary;
   } catch (error) {
     console.error('Fel vid sammanfattning med Gemini:', error);
     throw error;
   }
 }
-
-// Funktion för att sammanfatta text med OpenAI
-export async function summarizeWithOpenAI(
-  text: string,
-  apiKey: string
-): Promise<string> {
-  try {
-    // Rensa API-nyckeln från eventuella oönskade tecken
-    const trimmedApiKey = apiKey.trim();
-    if (!trimmedApiKey) {
-      throw new Error('OpenAI API-nyckel saknas.');
-    }
-    const openai = new OpenAI({ 
-      apiKey: trimmedApiKey,
-      dangerouslyAllowBrowser: true  // Tillåt användning i webbläsaren
-    });
-    
-    const response = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
-      messages: [
-        {
-          role: "system",
-          content: "Du är en assistent som sammanfattar mötesanteckningar på svenska. Skapa en koncis och välorganiserad sammanfattning som bevarar viktiga punkter, beslut och åtgärdspunkter. Formattera svaret med tydliga rubriker och punktlistor när det är lämpligt."
-        },
-        {
-          role: "user",
-          content: text
-        }
-      ],
-      temperature: 0.5,
-    });
-    
-    return response.choices[0].message.content || "Kunde inte generera sammanfattning.";
-  } catch (error) {
-    console.error('Fel vid sammanfattning med OpenAI:', error);
-    throw error;
-  }
-} 
